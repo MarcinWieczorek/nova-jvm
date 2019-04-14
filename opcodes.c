@@ -23,12 +23,40 @@ void njvm_internal_push(struct njvm_mexec *me, uint32_t value) {
     stack_index += 4;
 }
 
+void njvm_internal_istore(struct njvm_mexec *me, int i) {
+    me->lv_int[i] = njvm_internal_pop(me);
+}
+
+void njvm_internal_iload(struct njvm_mexec *me, int i) {
+    memcpy(stack + stack_index, &me->lv_int[i], 4);
+    /* ((unsigned int *) stack)[stack_index] = me->lv_int[1]; */
+    stack_index += 4;
+}
+
+// OPCODES IMPLEMENTATION
+
 void njvm_op_00_nop(struct njvm_mexec *me) {
 
 }
 
 void njvm_op_03_iconst_0(struct njvm_mexec *me) {
     njvm_internal_push(me, 0);
+}
+
+void njvm_op_04_iconst_1(struct njvm_mexec *me) {
+    njvm_internal_push(me, 1);
+}
+
+void njvm_op_05_iconst_2(struct njvm_mexec *me) {
+    njvm_internal_push(me, 2);
+}
+
+void njvm_op_06_iconst_3(struct njvm_mexec *me) {
+    njvm_internal_push(me, 3);
+}
+
+void njvm_op_07_iconst_4(struct njvm_mexec *me) {
+    njvm_internal_push(me, 4);
 }
 
 void njvm_op_08_iconst_5(struct njvm_mexec *me) {
@@ -42,16 +70,6 @@ void njvm_op_10_bipush(struct njvm_mexec *me) {
 void njvm_op_11_sipush(struct njvm_mexec *me) {
     stack[stack_index + 1] = me->code[me->eip + 1];
     stack[stack_index] = me->code[me->eip + 2];
-    stack_index += 4;
-}
-
-void njvm_internal_istore(struct njvm_mexec *me, int i) {
-    me->lv_int[i] = njvm_internal_pop(me);
-}
-
-void njvm_internal_iload(struct njvm_mexec *me, int i) {
-    memcpy(stack + stack_index, &me->lv_int[i], 4);
-    /* ((unsigned int *) stack)[stack_index] = me->lv_int[1]; */
     stack_index += 4;
 }
 
@@ -103,7 +121,7 @@ void njvm_op_84_iinc(struct njvm_mexec *me) {
 void njvm_op_A2_if_icmpge(struct njvm_mexec *me) {
     uint16_t branch = htobe16(*((unsigned short *) (me->code + me->eip + 1)));
     if(njvm_internal_pop(me) <= njvm_internal_pop(me)) {
-        me->eip += branch;
+        me->eip += branch - 3;
     }
 }
 
@@ -147,9 +165,8 @@ void njvm_op_B6_invokevirtual(struct njvm_mexec *me) {
     /* printf("method name: %s\n", method_name); */
 
     if(strcmp(method_name, "println") == 0) {
-        /* int val = *((unsigned int *) (stack + stack_index - 4)); */
         int val = njvm_internal_pop(me);
-        /* DPF("\n    ------   OUTPUT [%d]\n", val); */
+        DPF(" ---   OUTPUT = ");
         printf("%d\n", val);
     }
 
@@ -173,6 +190,10 @@ void (*opa[256])(struct njvm_mexec *) = {
     [0 ... 255] = NULL,
     [0x00] = &njvm_op_00_nop,
     [0x03] = &njvm_op_03_iconst_0,
+    [0x04] = &njvm_op_04_iconst_1,
+    [0x05] = &njvm_op_05_iconst_2,
+    [0x06] = &njvm_op_06_iconst_3,
+    [0x07] = &njvm_op_07_iconst_4,
     [0x08] = &njvm_op_08_iconst_5,
     [0x10] = &njvm_op_10_bipush,
     [0x11] = &njvm_op_11_sipush,

@@ -94,7 +94,7 @@ struct njvm_class *njvm_class_load(unsigned char *d, size_t size) {
     class->field_count = htobe16(*((unsigned short *)d));
     class->fields = calloc(class->field_count, sizeof(struct njvm_field));
     d += 2;
-    DPF("Field count: %d\n", class->field_count);
+    /* DPF("Field count: %d\n", class->field_count); */
     for(int fi = 0; fi < class->field_count; fi++) {
         struct njvm_field *f = &class->fields[fi];
         f->access_flags = htobe16(*((unsigned short *)d));
@@ -105,7 +105,7 @@ struct njvm_class *njvm_class_load(unsigned char *d, size_t size) {
         d += 2;
         f->attributes_count = htobe16(*((unsigned short *)d));
         d += 2;
-        DPF("Field: ni=%d, di=%d, ac=%d\n", f->name_index, f->descriptor_index, f->attributes_count);
+        /* DPF("Field: ni=%d, di=%d, ac=%d\n", f->name_index, f->descriptor_index, f->attributes_count); */
     }
     class->method_count = htobe16(*((unsigned short *)d));
     d += 2;

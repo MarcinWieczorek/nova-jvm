@@ -57,7 +57,7 @@ int njvm_constpool_load(struct njvm_class *cls, int index, uint8_t *data) {
     e->tag = data[0];
     int tag = data[0];
     size_t offset = 1;
-    DPF(" [%d] CP Tag: %2d\n", index, tag);
+    // DPF(" [%d] CP Tag: %2d\n", index, tag);
     /* DPF("  Additional size: %d\n", constant_pool_size[tag]); */
     int data_start = 0;
     e->size = -1;
@@ -67,12 +67,12 @@ int njvm_constpool_load(struct njvm_class *cls, int index, uint8_t *data) {
         short str_len = htobe16(*((unsigned short *) (data+offset)));
         offset += constant_pool_size[tag];
         // DPF("  String len = %d\n", str_len);
-        DPF("  STRING:          ");
+        // DPF("  STRING:          ");
         for(int j = 0; j < str_len; j++) {
             offset++;
-            DPF("%c", data[offset]);
+            // DPF("%c", data[offset]);
         }
-        DPF("\n");
+        // DPF("\n");
         offset++;
         e->size = offset - data_start;
         e->data = malloc(e->size);
