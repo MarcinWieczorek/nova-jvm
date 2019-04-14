@@ -9,7 +9,7 @@
 uint8_t *stack;
 uint8_t stack_index;
 
-void njvm_exec_method(struct njvm_method *m) {
+void njvm_exec_method(void *objref, struct njvm_method *m) {
     /* unsigned char *start = d; */
     uint8_t *d = m->code;
     size_t size = m->code_len;
@@ -21,7 +21,7 @@ void njvm_exec_method(struct njvm_method *m) {
     me.lv_int = calloc(m->max_locals, sizeof(int));
     memset(me.lv_int, 0, m->max_locals * sizeof(int));
     char *method_name = njvm_constpool_get(m->cls, m->name_index)->data;
-    DPF("\n --- Executing method: %s\n", method_name);
+    DPF(" --- Executing method: %s\n", method_name);
 
     //load arguments
     if(strcmp(method_name, "main")) {
@@ -37,32 +37,43 @@ void njvm_exec_method(struct njvm_method *m) {
     }
 
     while(me.eip < size) {
+        DPF("%02X ", me.eip);
         unsigned char opcode = me.code[me.eip];
         if(opa[opcode] != NULL) {
-            DPF("OP 0x%02X: %-15s", opcode, opa_names[opcode]);
-            opa[opcode](&me);
+            DPF("OP");
         }
         else {
-            DPF("NI 0x%02X: %-15s", opcode, opa_names[opcode]);
+            DPF("NI");
         }
-        me.eip += opa_sizes[opcode] + 1;
+        DPF(" 0x%02X: %-14s", opcode, opa_names[opcode]);
+        for(int ai = 0; ai < 2; ai++) {
+            if(ai < opa_sizes[opcode]) {
+                DPF("%02hhX ", me.code[me.eip + 1 + ai]);
+            }
+            else {
+                DPF("   ");
+            }
+        }
 
         DPF("0=%-3d 1=%-3d 2=%-3d 3=%-3d", me.lv_int[0], me.lv_int[1], me.lv_int[2], me.lv_int[3]);
-        DPF("  Stack(%2d): ", stack_index);
+        DPF("S(%2d): ", stack_index);
         for(int si = 0; si < stack_index; si++) {
             if(si > 0 && si % 4 == 0) DPF("| ");
             DPF("%02X ", stack[si]);
         }
         DPF("\b\n");
+        if(opa[opcode] != NULL) {
+            opa[opcode](&me);
+        }
+        me.eip += opa_sizes[opcode] + 1;
 
         if(opcode >= 0xAC && opcode <= 0xB1) {
-            goto ret;
+            break;
         }
     }
 
-ret:
     free(me.lv_int);
-    DPF("Execution completed");
+    DPF(" --- Returned from: %s\n", method_name);
 }
 
 struct njvm_class *njvm_class_load(unsigned char *d, size_t size) {
@@ -75,37 +86,27 @@ struct njvm_class *njvm_class_load(unsigned char *d, size_t size) {
     d += 2;
     for(int i = 1; i <= class->constant_pool_count - 1; i++) {
         d += njvm_constpool_load(class, i, d);
-#if 0
-        char tag = *d;
-        /* DPF(" [%d] CP Tag: %2d at 0x%X\n", i, tag, d - start); */
-        d++;
-        /* DPF("  Additional size: %d\n", constant_pool_size[tag]); */
-
-        if(tag == 1) {
-            short str_len = htobe16(*((unsigned short *)d));
-            d += constant_pool_size[tag];
-            /* DPF("  String len = %d\n", str_len); */
-            /* DPF("  STRING:          "); */
-            if(strncmp("Code", d + 1, str_len) == 0) {
-                attr_code_index = i;
-            }
-            for(int j = 0; j < str_len; j++) {
-                d++;
-                /* DPF("%c", *d); */
-            }
-            /* DPF("\n"); */
-            d++;
-            /* d += str_len; */
-        }
-        else {
-            d += constant_pool_size[tag];
-        }
-#endif
     }
 
     // flags
-    d += 8 + 2;
+    d += 8;
     /* DPF("--- OFFSET: 0x%lX\n", d - start); */
+    class->field_count = htobe16(*((unsigned short *)d));
+    class->fields = calloc(class->field_count, sizeof(struct njvm_field));
+    d += 2;
+    DPF("Field count: %d\n", class->field_count);
+    for(int fi = 0; fi < class->field_count; fi++) {
+        struct njvm_field *f = &class->fields[fi];
+        f->access_flags = htobe16(*((unsigned short *)d));
+        d += 2;
+        f->name_index = htobe16(*((unsigned short *)d));
+        d += 2;
+        f->descriptor_index = htobe16(*((unsigned short *)d));
+        d += 2;
+        f->attributes_count = htobe16(*((unsigned short *)d));
+        d += 2;
+        DPF("Field: ni=%d, di=%d, ac=%d\n", f->name_index, f->descriptor_index, f->attributes_count);
+    }
     class->method_count = htobe16(*((unsigned short *)d));
     d += 2;
     /* DPF("Method count: %d\n", class->method_count); */
@@ -173,7 +174,7 @@ int main(int argc, char **argv) {
     struct njvm_method *m = njvm_class_getmethod(cls, "main");
 
     if(m != NULL) {
-        njvm_exec_method(m);
+        njvm_exec_method(NULL, m);
     }
     else {
         DPF("main not found.\n");

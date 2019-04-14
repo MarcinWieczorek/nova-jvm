@@ -1,23 +1,31 @@
 class Add {
+    public static int field1;
+
     public static void main(String[] args) {
+        testLoop(5);
+        testAdd();
+        testField();
+    }
+
+    public static void testLoop(int max) {
+        int a = 0;
+        for(int i = 0; i < max; i++) {
+            a += i;
+        }
+        System.out.println(a);
+    }
+
+    public static void testAdd() {
         int a = 123;
         int b = 321;
-        int c = add(a, b);
-        // Add d = new Add();
-        // d.ns_add(a, b);
+        int c = a + b;
         System.out.println(c);
     }
 
-    public static int add(int a, int b) {
-        return a + b;
-    }
-
-    public int ns_add(int a, int b) {
-        return a + b;
-    }
-
-    public static int test5(int a, int b, int c, int d, int e) {
-        int aa = a, bb = b, cc = c, dd = d, ee = e;
-        return 0;
+    public static void testField() {
+        int a = 12;
+        Add.field1 = a;
+        int b = Add.field1;
+        System.out.println(b);
     }
 }

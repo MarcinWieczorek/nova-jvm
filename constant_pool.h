@@ -27,6 +27,11 @@ struct njvm_constpool_nameandtype {
     int type;
 };
 
+struct njvm_constpool_fieldref {
+    uint16_t cls;
+    uint16_t nat;
+};
+
 int njvm_constpool_strcmp(struct njvm_constpool_entry *e, char *str) {
     return e->tag == 1 && strncmp(e->data, str, e->size) == 0;
 }

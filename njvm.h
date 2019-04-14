@@ -18,9 +18,21 @@ struct njvm_method {
     uint8_t *code;
 };
 
+struct njvm_field {
+    struct njvm_class *cls;
+    uint16_t access_flags;
+    uint16_t name_index;
+    uint16_t descriptor_index;
+    uint16_t attributes_count;
+    uint32_t value;
+    void *attributes;
+};
+
 struct njvm_class {
     uint16_t constant_pool_count;
     struct njvm_constpool_entry *constant_pool;
+    uint16_t field_count;
+    struct njvm_field *fields;
     uint16_t method_count;
     struct njvm_method *methods;
 };
@@ -34,7 +46,7 @@ struct njvm_mexec {
     int lv_long[4];
 };
 
-void njvm_exec_method(struct njvm_method *m);
+void njvm_exec_method(void *, struct njvm_method *);
 
 struct njvm_constpool_entry *njvm_constpool_get(struct njvm_class *cls, int index) {
     return cls->constant_pool + index - 1;
@@ -83,7 +95,14 @@ int njvm_constpool_load(struct njvm_class *cls, int index, uint8_t *data) {
         nat->type = htobe16(*((unsigned short *) (data+offset)));
         offset += 2;
         e->data = nat;
-
+    }
+    else if(tag == 9) {
+        struct njvm_constpool_fieldref *fref = malloc(sizeof(*fref));
+        fref->cls = htobe16(*((unsigned short *) (data+offset)));
+        offset += 2;
+        fref->nat = htobe16(*((unsigned short *) (data+offset)));
+        offset += 2;
+        e->data = fref;
     }
     else {
         offset += constant_pool_size[tag];
@@ -96,6 +115,16 @@ struct njvm_method *njvm_class_getmethod(struct njvm_class *cls, char *name) {
     for(int i = 0; i < cls->method_count; i++) {
         if(njvm_constpool_strcmp(njvm_constpool_get(cls, cls->methods[i].name_index), name)) {
             return cls->methods + i;
+        }
+    }
+
+    return NULL;
+}
+
+struct njvm_field *njvm_class_getfield(struct njvm_class *cls, char *name) {
+    for(int i = 0; i < cls->field_count; i++) {
+        if(njvm_constpool_strcmp(njvm_constpool_get(cls, cls->fields[i].name_index), name)) {
+            return cls->fields + i;
         }
     }
 

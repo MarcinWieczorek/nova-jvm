@@ -3,12 +3,40 @@
 extern uint8_t stack_index;
 extern uint8_t *stack;
 
-void njvm_op_nop(struct njvm_mexec *me) {
+uint32_t njvm_internal_pop(struct njvm_mexec *me) {
+    if(stack_index == 0) {
+        DPF("\n ---------- UNDERFLOW ---------- \n");
+        return 0;
+    }
+
+    stack_index -= 4;
+    return *((uint32_t *) (stack + stack_index));
 }
 
-void njvm_op_bipush(struct njvm_mexec *me) {
-    stack[stack_index] = me->code[me->eip + 1];
+void njvm_internal_push(struct njvm_mexec *me, uint32_t value) {
+    if(stack_index >= 256) {
+        DPF("\n ---------- OVERFLOW ---------- \n");
+        return;
+    }
+
+    stack[stack_index] = value;
     stack_index += 4;
+}
+
+void njvm_op_00_nop(struct njvm_mexec *me) {
+
+}
+
+void njvm_op_03_iconst_0(struct njvm_mexec *me) {
+    njvm_internal_push(me, 0);
+}
+
+void njvm_op_08_iconst_5(struct njvm_mexec *me) {
+    njvm_internal_push(me, 5);
+}
+
+void njvm_op_10_bipush(struct njvm_mexec *me) {
+    njvm_internal_push(me, me->code[me->eip + 1]);
 }
 
 void njvm_op_11_sipush(struct njvm_mexec *me) {
@@ -18,14 +46,17 @@ void njvm_op_11_sipush(struct njvm_mexec *me) {
 }
 
 void njvm_internal_istore(struct njvm_mexec *me, int i) {
-    me->lv_int[i] = *((unsigned int *) stack + stack_index - 4);
-    stack_index -= 4;
+    me->lv_int[i] = njvm_internal_pop(me);
 }
 
 void njvm_internal_iload(struct njvm_mexec *me, int i) {
     memcpy(stack + stack_index, &me->lv_int[i], 4);
     /* ((unsigned int *) stack)[stack_index] = me->lv_int[1]; */
     stack_index += 4;
+}
+
+void njvm_op_3B_istore_0(struct njvm_mexec *me) {
+    njvm_internal_istore(me, 0);
 }
 
 void njvm_op_3C_istore_1(struct njvm_mexec *me) {
@@ -65,13 +96,47 @@ void njvm_op_60_iadd(struct njvm_mexec *me) {
     stack_index -= 4;
 }
 
-void njvm_op_B8_invokestatic(struct njvm_mexec *me) {
+void njvm_op_84_iinc(struct njvm_mexec *me) {
+    me->lv_int[me->code[me->eip + 1]] += me->code[me->eip + 2];
+}
+
+void njvm_op_A2_if_icmpge(struct njvm_mexec *me) {
+    uint16_t branch = htobe16(*((unsigned short *) (me->code + me->eip + 1)));
+    if(njvm_internal_pop(me) <= njvm_internal_pop(me)) {
+        me->eip += branch;
+    }
+}
+
+void njvm_op_A7_goto(struct njvm_mexec *me) {
+    signed short branch = htobe16(*((short *) (me->code + me->eip + 1)));
+    me->eip += branch - 3;
+    /* DPF("Gotoing to %d\n", me->eip); */
+}
+
+void njvm_op_B2_getstatic(struct njvm_mexec *me) {
     uint16_t index = htobe16(*((unsigned short *) (me->code + me->eip + 1)));
-    struct njvm_constpool_methodref *mref = njvm_constpool_get(me->m->cls, index)->data;
-    struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, mref->nat)->data;
-    char *method_name = njvm_constpool_get(me->m->cls, nat->name)->data;
-    struct njvm_method *method = njvm_class_getmethod(me->m->cls, method_name);
-    njvm_exec_method(method);
+    struct njvm_constpool_fieldref *fref = njvm_constpool_get(me->m->cls, index)->data;
+    struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, fref->nat)->data;
+    char *field_name = njvm_constpool_get(me->m->cls, nat->name)->data;
+    /* printf("field name: %s\n", field_name); */
+    struct njvm_field *field = njvm_class_getfield(me->m->cls, field_name);
+
+    if(field != NULL) {
+        njvm_internal_push(me, field->value);
+    }
+    else {
+        njvm_internal_push(me, 0); //TODO break somehow
+    }
+}
+
+void njvm_op_B3_putstatic(struct njvm_mexec *me) {
+    uint16_t index = htobe16(*((unsigned short *) (me->code + me->eip + 1)));
+    struct njvm_constpool_fieldref *fref = njvm_constpool_get(me->m->cls, index)->data;
+    struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, fref->nat)->data;
+    char *field_name = njvm_constpool_get(me->m->cls, nat->name)->data;
+    /* printf("field name: %s\n", field_name); */
+    struct njvm_field *field = njvm_class_getfield(me->m->cls, field_name);
+    field->value = njvm_internal_pop(me);
 }
 
 void njvm_op_B6_invokevirtual(struct njvm_mexec *me) {
@@ -82,38 +147,55 @@ void njvm_op_B6_invokevirtual(struct njvm_mexec *me) {
     /* printf("method name: %s\n", method_name); */
 
     if(strcmp(method_name, "println") == 0) {
-        int val = *((unsigned int *) (stack + stack_index - 4));
-        DPF("    ------   OUTPUT [%d]\n", val);
+        /* int val = *((unsigned int *) (stack + stack_index - 4)); */
+        int val = njvm_internal_pop(me);
+        /* DPF("\n    ------   OUTPUT [%d]\n", val); */
         printf("%d\n", val);
     }
-    /* struct njvm_method *method = njvm_class_getmethod(me->m->cls, method_name); */
-    /* njvm_exec_method(method); */
+
+    int objref = njvm_internal_pop(me);
+    struct njvm_method *method = njvm_class_getmethod(me->m->cls, method_name);
+    if(method != NULL) {
+        njvm_exec_method(&objref, method);
+    }
+}
+
+void njvm_op_B8_invokestatic(struct njvm_mexec *me) {
+    uint16_t index = htobe16(*((unsigned short *) (me->code + me->eip + 1)));
+    struct njvm_constpool_methodref *mref = njvm_constpool_get(me->m->cls, index)->data;
+    struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, mref->nat)->data;
+    char *method_name = njvm_constpool_get(me->m->cls, nat->name)->data;
+    struct njvm_method *method = njvm_class_getmethod(me->m->cls, method_name);
+    njvm_exec_method(NULL, method);
 }
 
 void (*opa[256])(struct njvm_mexec *) = {
     [0 ... 255] = NULL,
-    [0] = &njvm_op_nop,
-    [0x10] = &njvm_op_bipush,
+    [0x00] = &njvm_op_00_nop,
+    [0x03] = &njvm_op_03_iconst_0,
+    [0x08] = &njvm_op_08_iconst_5,
+    [0x10] = &njvm_op_10_bipush,
     [0x11] = &njvm_op_11_sipush,
     [0x1A] = &njvm_op_1A_iload_0,
     [0x1B] = &njvm_op_1B_iload_1,
     [0x1C] = &njvm_op_1C_iload_2,
     [0x1D] = &njvm_op_1D_iload_3,
+    [0x3B] = &njvm_op_3B_istore_0,
     [0x3C] = &njvm_op_3C_istore_1,
     [0x3D] = &njvm_op_3D_istore_2,
     [0x3E] = &njvm_op_3E_istore_3,
     [0x60] = &njvm_op_60_iadd,
+    [0x84] = &njvm_op_84_iinc,
+    [0xA2] = &njvm_op_A2_if_icmpge,
+    [0xA7] = &njvm_op_A7_goto,
+    [0xB2] = &njvm_op_B2_getstatic,
+    [0xB3] = &njvm_op_B3_putstatic,
     [0xB6] = &njvm_op_B6_invokevirtual,
     [0xB8] = &njvm_op_B8_invokestatic,
 };
 
 int opa_sizes[256] = {
-    [0x00 ... 0x0F] = 0,
-    1, 2, 1, 2, 2, 1, 1, 1, 1, 1,
-    [0x1A ... 0x35] = 0,
-    [0xB2] = 2,
-    [0xB6] = 2,
-    [0xB8] = 2,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 2, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 16, 8, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 4, 4, 2, 1, 2, 0, 0, 2, 2, 0, 0, 3, 3, 2, 2, 4, 4, 0, 0, 0, 0,
 };
 
 char *opa_names[256] = {
