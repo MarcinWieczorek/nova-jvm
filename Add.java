@@ -3,8 +3,13 @@ class Add {
 
     public static void main(String[] args) {
         testLoop(5);
+        //Expect 10
         testAdd();
-        testField();
+        //Expect 444
+        testStaticField();
+        //Expect 12
+        testMultipleObjects();
+        //Expect 124 4
     }
 
     public static void testLoop(int max) {
@@ -22,10 +27,35 @@ class Add {
         System.out.println(c);
     }
 
-    public static void testField() {
+    public static void testMultipleObjects() {
+        B b1 = new B(123);
+        B b2 = new B(3);
+        b1.inc();
+        b2.inc();
+        b1.print();
+        b2.print();
+    }
+
+    public static void testStaticField() {
         int a = 12;
         Add.field1 = a;
         int b = Add.field1;
         System.out.println(b);
+    }
+}
+
+class B {
+    private int v;
+
+    B(int v) {
+        this.v = v;
+    }
+
+    public void inc() {
+        this.v++;
+    }
+
+    public void print() {
+        System.out.println(this.v);
     }
 }

@@ -9,7 +9,7 @@
 uint8_t *stack;
 uint8_t stack_index;
 
-void njvm_exec_method(void *objref, struct njvm_method *m) {
+void njvm_exec_method(uint32_t st, struct njvm_method *m) {
     /* unsigned char *start = d; */
     uint8_t *d = m->code;
     size_t size = m->code_len;
@@ -21,20 +21,30 @@ void njvm_exec_method(void *objref, struct njvm_method *m) {
     me.lv_int = calloc(m->max_locals, sizeof(int));
     memset(me.lv_int, 0, m->max_locals * sizeof(int));
     char *method_name = njvm_constpool_get(m->cls, m->name_index)->data;
-    DPF(" --- Executing method: %s\n", method_name);
+    struct njvm_constpool_classref *cref = njvm_constpool_get(m->cls, m->cls->this_class)->data;
+    char *class_name = njvm_constpool_get(m->cls, cref->name)->data;
+    char *desc = njvm_constpool_get(m->cls, m->descriptor_index)->data;
+    DPF("\033[0;31m --- Executing method: %s.%s:%s on objref #", class_name, method_name, desc);
 
     //load arguments
     if(strcmp(method_name, "main")) {
     /* DPF("DESCRIPTOR INDEX: %d\n", m->descriptor_index); */
-    char *desc = njvm_constpool_get(m->cls, m->descriptor_index)->data;
     char *argptr = strchr(desc, ')') - 1;
 
-    for(int i = 0; *argptr != '('; i++, argptr--) {
+    for(int i = st == 0 ? 0 : 1; *argptr != '('; i++, argptr--) {
         me.lv_int[i] = *((unsigned int *) (stack + stack_index - 4));
         stack_index -= 4;
         /* DPF("Argument %d = %c -> %d\n", i, *argptr, me.lv_int[i]); */
     }
     }
+
+    uint32_t objref = 0;
+    if(st != 0) {
+        objref = *((unsigned int *) (stack + stack_index - 4));
+        stack_index -= 4;
+        me.lv_int[0] = objref;
+    }
+    DPF("%d\033[0m\n", objref);
 
     while(me.eip < size) {
         DPF("%02X ", me.eip);
@@ -73,7 +83,7 @@ void njvm_exec_method(void *objref, struct njvm_method *m) {
     }
 
     free(me.lv_int);
-    DPF(" --- Returned from: %s\n", method_name);
+    DPF("\033[0;31m --- Returned from: %s.%s:%s\033[0m\n", class_name, method_name, desc);
 }
 
 struct njvm_class *njvm_class_load(unsigned char *d, size_t size) {
@@ -89,7 +99,10 @@ struct njvm_class *njvm_class_load(unsigned char *d, size_t size) {
     }
 
     // flags
-    d += 8;
+    d += 2;
+    class->this_class = htobe16(*((unsigned short *)d));
+    /* DPF("This class = %d\n", class->this_class); */
+    d += 6;
     /* DPF("--- OFFSET: 0x%lX\n", d - start); */
     class->field_count = htobe16(*((unsigned short *)d));
     class->fields = calloc(class->field_count, sizeof(struct njvm_field));
@@ -97,6 +110,7 @@ struct njvm_class *njvm_class_load(unsigned char *d, size_t size) {
     /* DPF("Field count: %d\n", class->field_count); */
     for(int fi = 0; fi < class->field_count; fi++) {
         struct njvm_field *f = &class->fields[fi];
+        f->cls = class;
         f->access_flags = htobe16(*((unsigned short *)d));
         d += 2;
         f->name_index = htobe16(*((unsigned short *)d));
@@ -161,24 +175,38 @@ struct njvm_class *njvm_class_load(unsigned char *d, size_t size) {
 }
 
 int main(int argc, char **argv) {
-    FILE *fh = fopen(argv[1], "rb");
-    fseek(fh, 0, SEEK_END);
-    long size = ftell(fh);
-    unsigned char *buf = malloc(size);
-    rewind(fh);
-    fread(buf, 1, size, fh);
-    stack = malloc(128);
-    stack_index = 0;
-	struct njvm_class *cls = njvm_class_load(buf, size);
-
-    struct njvm_method *m = njvm_class_getmethod(cls, "main");
-
-    if(m != NULL) {
-        njvm_exec_method(NULL, m);
-    }
-    else {
-        DPF("main not found.\n");
+    struct njvm_jre jre;
+    jre.cls_count = argc - 1;
+    jre.clss = calloc(jre.cls_count, sizeof(struct njvm_class));
+    for(int i = 0; i < 24; i++) {
+        jre.objects[i] = NULL;
     }
 
-    fclose(fh);
+    for(int i = 0; i < jre.cls_count; i++) {
+        DPF(" --- Loading Class: %s\n", argv[i + 1]);
+        FILE *fh = fopen(argv[i + 1], "rb");
+        fseek(fh, 0, SEEK_END);
+        long size = ftell(fh);
+        unsigned char *buf = malloc(size);
+        rewind(fh);
+        fread(buf, 1, size, fh);
+        stack = malloc(128);
+        stack_index = 0;
+        struct njvm_class *cls = njvm_class_load(buf, size);
+        cls->jre = &jre;
+        jre.clss[i] = cls;
+
+        free(buf);
+        fclose(fh);
+    }
+
+    for(int i = 0; i < jre.cls_count; i++) {
+        struct njvm_method *m = njvm_class_getmethod(jre.clss[i], "main");
+        if(m != NULL) {
+            njvm_exec_method(0, m);
+            break;
+        }
+    }
+
+    njvm_jre_free(&jre);
 }

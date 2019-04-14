@@ -1,3 +1,5 @@
+#include <assert.h>
+
 #include "njvm.h"
 
 extern uint8_t stack_index;
@@ -6,6 +8,7 @@ extern uint8_t *stack;
 uint32_t njvm_internal_pop(struct njvm_mexec *me) {
     if(stack_index == 0) {
         DPF("\n ---------- UNDERFLOW ---------- \n");
+        exit(1);
         return 0;
     }
 
@@ -19,15 +22,16 @@ void njvm_internal_push(struct njvm_mexec *me, uint32_t value) {
         return;
     }
 
-    stack[stack_index] = value;
+    /* DPF("Pushing value %d\n", value); */
+    *((uint32_t *) (stack + stack_index)) = value;
     stack_index += 4;
 }
 
-void njvm_internal_istore(struct njvm_mexec *me, int i) {
+void njvm_internal_istore(struct njvm_mexec *me, uint32_t i) {
     me->lv_int[i] = njvm_internal_pop(me);
 }
 
-void njvm_internal_iload(struct njvm_mexec *me, int i) {
+void njvm_internal_iload(struct njvm_mexec *me, uint32_t i) {
     memcpy(stack + stack_index, &me->lv_int[i], 4);
     /* ((unsigned int *) stack)[stack_index] = me->lv_int[1]; */
     stack_index += 4;
@@ -73,22 +77,6 @@ void njvm_op_11_sipush(struct njvm_mexec *me) {
     stack_index += 4;
 }
 
-void njvm_op_3B_istore_0(struct njvm_mexec *me) {
-    njvm_internal_istore(me, 0);
-}
-
-void njvm_op_3C_istore_1(struct njvm_mexec *me) {
-    njvm_internal_istore(me, 1);
-}
-
-void njvm_op_3D_istore_2(struct njvm_mexec *me) {
-    njvm_internal_istore(me, 2);
-}
-
-void njvm_op_3E_istore_3(struct njvm_mexec *me) {
-    njvm_internal_istore(me, 3);
-}
-
 void njvm_op_1A_iload_0(struct njvm_mexec *me) {
     njvm_internal_iload(me, 0);
 }
@@ -105,8 +93,55 @@ void njvm_op_1D_iload_3(struct njvm_mexec *me) {
     njvm_internal_iload(me, 3);
 }
 
+void njvm_op_3B_istore_0(struct njvm_mexec *me) {
+    njvm_internal_istore(me, 0);
+}
+
+void njvm_op_3C_istore_1(struct njvm_mexec *me) {
+    njvm_internal_istore(me, 1);
+}
+
+void njvm_op_3D_istore_2(struct njvm_mexec *me) {
+    njvm_internal_istore(me, 2);
+}
+
+void njvm_op_3E_istore_3(struct njvm_mexec *me) {
+    njvm_internal_istore(me, 3);
+}
+
+void njvm_op_4B_astore_0(struct njvm_mexec *me) {
+    njvm_internal_istore(me, 0);
+}
+
+void njvm_op_4C_astore_1(struct njvm_mexec *me) {
+    njvm_internal_istore(me, 1);
+}
+
+void njvm_op_4D_astore_2(struct njvm_mexec *me) {
+    njvm_internal_istore(me, 2);
+}
+
+void njvm_op_4E_astore_3(struct njvm_mexec *me) {
+    njvm_internal_istore(me, 3);
+}
+
+void njvm_op_57_pop(struct njvm_mexec *me) {
+    njvm_internal_pop(me);
+}
+
+void njvm_op_58_pop2(struct njvm_mexec *me) {
+    njvm_internal_pop(me);
+    njvm_internal_pop(me);
+}
+
+void njvm_op_59_dup(struct njvm_mexec *me) {
+    uint32_t val = njvm_internal_pop(me);
+    njvm_internal_push(me, val);
+    njvm_internal_push(me, val);
+}
+
 void njvm_op_60_iadd(struct njvm_mexec *me) {
-    int a, b;
+    uint32_t a, b;
     memcpy(&a, stack + stack_index - 4, 4);
     memcpy(&b, stack + stack_index - 8, 4);
     b += a;
@@ -134,15 +169,24 @@ void njvm_op_A7_goto(struct njvm_mexec *me) {
 void njvm_op_B2_getstatic(struct njvm_mexec *me) {
     uint16_t index = htobe16(*((unsigned short *) (me->code + me->eip + 1)));
     struct njvm_constpool_fieldref *fref = njvm_constpool_get(me->m->cls, index)->data;
+    struct njvm_constpool_classref *cref = njvm_constpool_get(me->m->cls, fref->cls)->data;
+    char *cls_name = njvm_constpool_get(me->m->cls, cref->name)->data;
+    /* DPF(" --- Class name: %s\n", cls_name); */
+    struct njvm_class *cls = njvm_class_getclass(me->m->cls->jre, cls_name);
+    if(cls == NULL) {
+        DPF(" --- ClassNotFound: %s\n", cls_name);
+    }
     struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, fref->nat)->data;
     char *field_name = njvm_constpool_get(me->m->cls, nat->name)->data;
-    /* printf("field name: %s\n", field_name); */
-    struct njvm_field *field = njvm_class_getfield(me->m->cls, field_name);
+    /* DPF(" --- field name: %s\n", field_name); */
+    struct njvm_field *field = njvm_class_getfield(cls, field_name);
 
     if(field != NULL) {
+        /* DPF(" --- pushed %d\n", field->value); */
         njvm_internal_push(me, field->value);
     }
     else {
+        DPF(" --- NoSuchField %s\n", field_name);
         njvm_internal_push(me, 0); //TODO break somehow
     }
 }
@@ -150,30 +194,124 @@ void njvm_op_B2_getstatic(struct njvm_mexec *me) {
 void njvm_op_B3_putstatic(struct njvm_mexec *me) {
     uint16_t index = htobe16(*((unsigned short *) (me->code + me->eip + 1)));
     struct njvm_constpool_fieldref *fref = njvm_constpool_get(me->m->cls, index)->data;
+    struct njvm_constpool_classref *cref = njvm_constpool_get(me->m->cls, fref->cls)->data;
+    char *cls_name = njvm_constpool_get(me->m->cls, cref->name)->data;
+    /* DPF(" --- Class name: %s\n", cls_name); */
+    struct njvm_class *cls = njvm_class_getclass(me->m->cls->jre, cls_name);
+    if(cls == NULL) {
+        DPF(" -!!- ClassNotFound: %s\n", cls_name);
+    }
     struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, fref->nat)->data;
     char *field_name = njvm_constpool_get(me->m->cls, nat->name)->data;
-    /* printf("field name: %s\n", field_name); */
-    struct njvm_field *field = njvm_class_getfield(me->m->cls, field_name);
+
+    struct njvm_field *field = njvm_class_getfield(cls, field_name);
     field->value = njvm_internal_pop(me);
+}
+
+void njvm_op_B4_getfield(struct njvm_mexec *me) {
+    uint16_t index = htobe16(*((unsigned short *) (me->code + me->eip + 1)));
+    struct njvm_constpool_fieldref *fref = njvm_constpool_get(me->m->cls, index)->data;
+    struct njvm_constpool_classref *cref = njvm_constpool_get(me->m->cls, fref->cls)->data;
+    char *cls_name = njvm_constpool_get(me->m->cls, cref->name)->data;
+    /* DPF(" --- Class name: %s\n", cls_name); */
+    struct njvm_class *cls = njvm_class_getclass(me->m->cls->jre, cls_name);
+    if(cls == NULL) {
+        DPF(" -!!- ClassNotFound: %s\n", cls_name);
+    }
+    struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, fref->nat)->data;
+    char *field_name = njvm_constpool_get(me->m->cls, nat->name)->data;
+    /* DPF(" --- field name: %s\n", field_name); */
+    struct njvm_field *field = njvm_class_getfield(cls, field_name);
+    struct njvm_object *o = me->m->cls->jre->objects[njvm_internal_pop(me)];
+    assert(o);
+
+    if(field != NULL) {
+        /* DPF(" --- pushed %d\n", field->value); */
+        for(int i = 0; i < field->cls->field_count; i++) {
+            if(o->fields[i].first == field) {
+                njvm_internal_push(me, o->fields[i].second);
+                break;
+            }
+        }
+    }
+    else {
+        DPF(" --- NoSuchField %s\n", field_name);
+        njvm_internal_push(me, 0); //TODO break somehow
+    }
+
+}
+
+void njvm_op_B5_putfield(struct njvm_mexec *me) {
+    uint16_t index = htobe16(*((unsigned short *) (me->code + me->eip + 1)));
+    struct njvm_constpool_fieldref *fref = njvm_constpool_get(me->m->cls, index)->data;
+    struct njvm_constpool_classref *cref = njvm_constpool_get(me->m->cls, fref->cls)->data;
+    char *cls_name = njvm_constpool_get(me->m->cls, cref->name)->data;
+    /* DPF(" --- Class name: %s\n", cls_name); */
+    struct njvm_class *cls = njvm_class_getclass(me->m->cls->jre, cls_name);
+    if(cls == NULL) {
+        DPF(" --- ClassNotFound: %s\n", cls_name);
+    }
+    struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, fref->nat)->data;
+    char *field_name = njvm_constpool_get(me->m->cls, nat->name)->data;
+    /* DPF(" --- field name: %s\n", field_name); */
+    struct njvm_field *field = njvm_class_getfield(cls, field_name);
+    uint32_t value = njvm_internal_pop(me);
+    uint32_t objref = njvm_internal_pop(me);
+    /* DPF("OBJREF = %d\n", objref); */
+    struct njvm_object *o = me->m->cls->jre->objects[objref];
+    assert(o);
+
+    if(field != NULL) {
+        /* DPF(" --- pushed %d\n", field->value); */
+        /* njvm_internal_push(me, field->value); */
+        for(int i = 0; i < field->cls->field_count; i++) {
+            if(o->fields[i].first == field) {
+                o->fields[i].second = value;
+                break;
+            }
+        }
+    }
+    else {
+        DPF(" --- NoSuchField %s\n", field_name);
+        njvm_internal_push(me, 0); //TODO break somehow
+    }
+
 }
 
 void njvm_op_B6_invokevirtual(struct njvm_mexec *me) {
     uint16_t index = htobe16(*((unsigned short *) (me->code + me->eip + 1)));
+    /* DPF("Index = %d\n", index); */
     struct njvm_constpool_methodref *mref = njvm_constpool_get(me->m->cls, index)->data;
+    assert(mref);
+    /* DPF("MREF: #%d #%d\n", mref->cls, mref->nat); */
     struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, mref->nat)->data;
+    assert(nat);
+    /* DPF("NAT: #%d #%d\n", nat->name, nat->type); */
     char *method_name = njvm_constpool_get(me->m->cls, nat->name)->data;
-    /* printf("method name: %s\n", method_name); */
+    assert(method_name);
 
     if(strcmp(method_name, "println") == 0) {
-        int val = njvm_internal_pop(me);
+        uint32_t val = njvm_internal_pop(me);
+        njvm_internal_pop(me);
         DPF(" ---   OUTPUT = ");
         printf("%d\n", val);
+        return;
     }
 
-    int objref = njvm_internal_pop(me);
-    struct njvm_method *method = njvm_class_getmethod(me->m->cls, method_name);
+    /* struct njvm_class *cls = njvm_constpool_clsref(me->m->cls->jre, mref->cls); */
+    struct njvm_constpool_classref *cref = njvm_constpool_get(me->m->cls, mref->cls)->data;
+    char *cls_name = njvm_constpool_get(me->m->cls, cref->name)->data;
+    struct njvm_class *cls = njvm_class_getclass(me->m->cls->jre, cls_name);
+    assert(cls);
+    /* DPF("CLAS: %p\n", cls); */
+    /* uint32_t objref = njvm_internal_pop(me); */
+    /* struct njvm_object *o = me->m->cls->jre->objects[objref]; */
+    struct njvm_method *method = njvm_class_getmethod(cls, method_name);
     if(method != NULL) {
-        njvm_exec_method(&objref, method);
+        njvm_exec_method(1, method);
+    }
+    else {
+        DPF("No such method\n");
     }
 }
 
@@ -183,7 +321,17 @@ void njvm_op_B8_invokestatic(struct njvm_mexec *me) {
     struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, mref->nat)->data;
     char *method_name = njvm_constpool_get(me->m->cls, nat->name)->data;
     struct njvm_method *method = njvm_class_getmethod(me->m->cls, method_name);
-    njvm_exec_method(NULL, method);
+    njvm_exec_method(0, method);
+}
+
+void njvm_op_BB_new(struct njvm_mexec *me) {
+    uint16_t index = htobe16(*((unsigned short *) (me->code + me->eip + 1)));
+    struct njvm_constpool_classref *cref = njvm_constpool_get(me->m->cls, index)->data;
+    char *cls_name = njvm_constpool_get(me->m->cls, cref->name)->data;
+    struct njvm_class *cls = njvm_class_getclass(me->m->cls->jre, cls_name);
+
+    struct njvm_object *o = njvm_class_new(me->m->cls->jre, cls);
+    njvm_internal_push(me, o->ref);
 }
 
 void (*opa[256])(struct njvm_mexec *) = {
@@ -201,18 +349,34 @@ void (*opa[256])(struct njvm_mexec *) = {
     [0x1B] = &njvm_op_1B_iload_1,
     [0x1C] = &njvm_op_1C_iload_2,
     [0x1D] = &njvm_op_1D_iload_3,
+    [0x2A] = &njvm_op_1A_iload_0, // iload works the same way
+    [0x2B] = &njvm_op_1B_iload_1, // ^
+    [0x2C] = &njvm_op_1C_iload_2, // ^
+    [0x2D] = &njvm_op_1D_iload_3, // ^
     [0x3B] = &njvm_op_3B_istore_0,
     [0x3C] = &njvm_op_3C_istore_1,
     [0x3D] = &njvm_op_3D_istore_2,
     [0x3E] = &njvm_op_3E_istore_3,
+    [0x4B] = &njvm_op_4B_astore_0,
+    [0x4C] = &njvm_op_4C_astore_1,
+    [0x4D] = &njvm_op_4D_astore_2,
+    [0x4E] = &njvm_op_4E_astore_3,
+    [0x57] = &njvm_op_57_pop,
+    [0x58] = &njvm_op_58_pop2,
+    [0x59] = &njvm_op_59_dup,
     [0x60] = &njvm_op_60_iadd,
     [0x84] = &njvm_op_84_iinc,
     [0xA2] = &njvm_op_A2_if_icmpge,
     [0xA7] = &njvm_op_A7_goto,
+    [0xB1] = &njvm_op_00_nop,
     [0xB2] = &njvm_op_B2_getstatic,
     [0xB3] = &njvm_op_B3_putstatic,
+    [0xB4] = &njvm_op_B4_getfield,
+    [0xB5] = &njvm_op_B5_putfield,
     [0xB6] = &njvm_op_B6_invokevirtual,
+    [0xB7] = &njvm_op_B6_invokevirtual,
     [0xB8] = &njvm_op_B8_invokestatic,
+    [0xBB] = &njvm_op_BB_new,
 };
 
 int opa_sizes[256] = {

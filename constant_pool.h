@@ -32,7 +32,12 @@ struct njvm_constpool_fieldref {
     uint16_t nat;
 };
 
+struct njvm_constpool_classref {
+    uint16_t name;
+};
+
 int njvm_constpool_strcmp(struct njvm_constpool_entry *e, char *str) {
+    // DPF("%s == %s\n", (char *) e->data, str);
     return e->tag == 1 && strncmp(e->data, str, e->size) == 0;
 }
 
