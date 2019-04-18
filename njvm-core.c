@@ -239,3 +239,64 @@ void njvm_raise(char *fmt, ...) {
     va_end (args);
     printf("\n ---!!!--- NJVM EXCEPTION  ---!!!---\n");
 }
+
+struct njvm_method *njvm_class_getmethod(struct njvm_class *cls, char *name) {
+    for(int i = 0; i < cls->method_count; i++) {
+        if(njvm_constpool_strcmp(njvm_constpool_get(cls, cls->methods[i].name_index), name)) {
+            return cls->methods + i;
+        }
+    }
+
+    return NULL;
+}
+
+struct njvm_field *njvm_class_getfield(struct njvm_class *cls, char *name) {
+    for(int i = 0; i < cls->field_count; i++) {
+        if(njvm_constpool_strcmp(njvm_constpool_get(cls, cls->fields[i].name_index), name)) {
+            return cls->fields + i;
+        }
+    }
+
+    return NULL;
+}
+
+struct njvm_class *njvm_class_getclass(struct njvm_jre *jre, char *name) {
+    for(int i = 0; i < jre->cls_count; i++) {
+        struct njvm_constpool_classref *cref = njvm_constpool_get(jre->clss[i], jre->clss[i]->this_class)->data;
+        if(njvm_constpool_strcmp(njvm_constpool_get(jre->clss[i], cref->name), name)) {
+            return jre->clss[i];
+        }
+    }
+
+    return NULL;
+}
+
+struct njvm_object *njvm_class_new(struct njvm_jre *jre, struct njvm_class *cls) {
+    assert(jre);
+    assert(cls);
+    struct njvm_object *obj = malloc(sizeof(*obj));
+
+    if(obj == NULL) {
+        DPF("FAILED TO ALLOCATE NEW JAVA OBJECT\n");
+        return NULL;
+    }
+
+    obj->cls = cls;
+    obj->fields = calloc(cls->field_count, sizeof(pair_t));
+
+    for(int i = 0; i < cls->field_count; i++) {
+        obj->fields[i].first = &cls->fields[i];
+        obj->fields[i].second = 0;
+    }
+
+    for(int i = 1; i < 24; i++) {
+        if(jre->objects[i] == NULL) {
+            obj->ref = i;
+            jre->objects[i] = obj;
+            DPF("CREATED OBJECT #%d of p = %p\n", i, obj);
+            break;
+        }
+    }
+
+    return obj;
+}

@@ -42,6 +42,11 @@ int njvm_constpool_strcmp(struct njvm_constpool_entry *, char *str);
 
 void njvm_constpool_free(struct njvm_constpool_entry *);
 
+struct njvm_class;
+int njvm_constpool_load(struct njvm_class *cls, uint32_t index, uint8_t *data);
+
+struct njvm_constpool_entry *njvm_constpool_get(struct njvm_class *cls, uint32_t index);
+
 char *njvm_cpget_utf8(struct njvm_jre *, int index);
 
 struct njvm_class *njvm_cpget_class(struct njvm_jre *, uint32_t index);
