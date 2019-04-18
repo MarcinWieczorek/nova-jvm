@@ -1,3 +1,6 @@
 njvm
 *.class
+vgcore.*
+zip/
+*.jar
 

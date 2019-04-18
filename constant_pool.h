@@ -1,5 +1,5 @@
 #pragma once
-#include "njvm.h"
+#include <stdint.h>
 
 char constant_pool_size[20] = {
     0,
@@ -36,8 +36,17 @@ struct njvm_constpool_classref {
     uint16_t name;
 };
 
-int njvm_constpool_strcmp(struct njvm_constpool_entry *e, char *str) {
-    // DPF("%s == %s\n", (char *) e->data, str);
-    return e->tag == 1 && strncmp(e->data, str, e->size) == 0;
-}
+struct njvm_jre;
+
+int njvm_constpool_strcmp(struct njvm_constpool_entry *, char *str);
+
+void njvm_constpool_free(struct njvm_constpool_entry *);
+
+char *njvm_cpget_utf8(struct njvm_jre *, int index);
+
+struct njvm_class *njvm_cpget_class(struct njvm_jre *, uint32_t index);
+
+struct njvm_method *njvm_cpget_method(struct njvm_jre *, uint32_t index);
+
+struct njvm_field *njvm_cpget_field(struct njvm_jre *, uint32_t index);
 

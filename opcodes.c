@@ -174,7 +174,8 @@ void njvm_op_B2_getstatic(struct njvm_mexec *me) {
     /* DPF(" --- Class name: %s\n", cls_name); */
     struct njvm_class *cls = njvm_class_getclass(me->m->cls->jre, cls_name);
     if(cls == NULL) {
-        DPF(" --- ClassNotFound: %s\n", cls_name);
+        DPF(" -!!- ClassNotFound: %s\n", cls_name);
+        return;
     }
     struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, fref->nat)->data;
     char *field_name = njvm_constpool_get(me->m->cls, nat->name)->data;
@@ -200,6 +201,7 @@ void njvm_op_B3_putstatic(struct njvm_mexec *me) {
     struct njvm_class *cls = njvm_class_getclass(me->m->cls->jre, cls_name);
     if(cls == NULL) {
         DPF(" -!!- ClassNotFound: %s\n", cls_name);
+        return;
     }
     struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, fref->nat)->data;
     char *field_name = njvm_constpool_get(me->m->cls, nat->name)->data;
@@ -248,9 +250,12 @@ void njvm_op_B5_putfield(struct njvm_mexec *me) {
     char *cls_name = njvm_constpool_get(me->m->cls, cref->name)->data;
     /* DPF(" --- Class name: %s\n", cls_name); */
     struct njvm_class *cls = njvm_class_getclass(me->m->cls->jre, cls_name);
+
     if(cls == NULL) {
-        DPF(" --- ClassNotFound: %s\n", cls_name);
+        njvm_raise("NoClassDefFoundError %s", cls_name);
+        return;
     }
+
     struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, fref->nat)->data;
     char *field_name = njvm_constpool_get(me->m->cls, nat->name)->data;
     /* DPF(" --- field name: %s\n", field_name); */
@@ -272,10 +277,9 @@ void njvm_op_B5_putfield(struct njvm_mexec *me) {
         }
     }
     else {
-        DPF(" --- NoSuchField %s\n", field_name);
-        njvm_internal_push(me, 0); //TODO break somehow
+        njvm_raise("NotSuchFieldException %s", field_name);
+        return;
     }
-
 }
 
 void njvm_op_B6_invokevirtual(struct njvm_mexec *me) {
@@ -311,7 +315,8 @@ void njvm_op_B6_invokevirtual(struct njvm_mexec *me) {
         njvm_exec_method(1, method);
     }
     else {
-        DPF("No such method\n");
+        njvm_raise("NotSuchMethodException %s", method_name);
+        return;
     }
 }
 
@@ -329,6 +334,11 @@ void njvm_op_BB_new(struct njvm_mexec *me) {
     struct njvm_constpool_classref *cref = njvm_constpool_get(me->m->cls, index)->data;
     char *cls_name = njvm_constpool_get(me->m->cls, cref->name)->data;
     struct njvm_class *cls = njvm_class_getclass(me->m->cls->jre, cls_name);
+
+    if(cls == NULL) {
+        njvm_raise("NoClassDefFoundError %s", cls_name);
+        return;
+    }
 
     struct njvm_object *o = njvm_class_new(me->m->cls->jre, cls);
     njvm_internal_push(me, o->ref);

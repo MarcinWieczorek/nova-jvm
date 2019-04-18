@@ -1,5 +1,9 @@
 #pragma once
 #include <assert.h>
+#include <string.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #define DPF(fmt, ...) \
     do { \
@@ -49,7 +53,6 @@ struct njvm_mexec {
     uint32_t eip;
     uint8_t *code;
     uint32_t *lv_int;
-    uint32_t lv_long[4];
 };
 
 typedef struct {
@@ -71,36 +74,19 @@ struct njvm_jre {
 
 void njvm_exec_method(uint32_t, struct njvm_method *);
 
-void njvm_object_free(struct njvm_object *o) {
+struct njvm_class *njvm_class_load(unsigned char *, size_t);
 
-}
+void njvm_object_free(struct njvm_object *o);
 
-void njvm_field_free(struct njvm_field *field) {
-    free(field->attributes);
-}
+void njvm_field_free(struct njvm_field *field);
 
-void njvm_method_free(struct njvm_method *method) {
-    free(method->code);
-}
+void njvm_method_free(struct njvm_method *method);
 
-void njvm_class_free(struct njvm_class *cls) {
-    free(cls->constant_pool);
-    for(int i = 0; i < cls->field_count; i++) {
-        njvm_field_free(cls->fields + i);
-    }
-    free(cls->fields);
+void njvm_class_free(struct njvm_class *cls);
 
-    for(int i = 0; i < cls->method_count; i++) {
-        njvm_method_free(cls->methods + i);
-    }
-    free(cls->methods);
-}
+void njvm_jre_free(struct njvm_jre *jre);
 
-void njvm_jre_free(struct njvm_jre *jre) {
-    for(int i = 0; i < jre->cls_count; i++) {
-        njvm_class_free(jre->clss[i]);
-    }
-}
+void njvm_raise(char *, ...);
 
 struct njvm_constpool_entry *njvm_constpool_get(struct njvm_class *cls, uint32_t index) {
     if(index >= cls->constant_pool_count) {
@@ -132,13 +118,15 @@ int njvm_constpool_load(struct njvm_class *cls, uint32_t index, uint8_t *data) {
         }
         offset++;
         e->size = offset - data_start;
-        e->data = malloc(e->size);
+        e->data = malloc(e->size + 1);
         memcpy(e->data, data + data_start, e->size);
+        ((uint8_t *) e->data)[e->size] = '\0';
         /* d += str_len; */
     }
     else if(tag == 10) { // methodref
         // DPF("Parsing methodref\n");
         struct njvm_constpool_methodref *mref = malloc(sizeof(struct njvm_constpool_methodref));
+        assert(mref != NULL);
         mref->cls = htobe16(*((unsigned short *) (data+offset)));
         offset += 2;
         mref->nat = htobe16(*((unsigned short *) (data+offset)));
@@ -147,7 +135,7 @@ int njvm_constpool_load(struct njvm_class *cls, uint32_t index, uint8_t *data) {
         DPF("MREF: #%d #%d", mref->cls, mref->nat);
     }
     else if(tag == 12) {
-        struct njvm_constpool_nameandtype *nat = malloc(sizeof(*nat));
+        struct njvm_constpool_nameandtype *nat = malloc(sizeof(struct njvm_constpool_nameandtype));
         nat->name = htobe16(*((unsigned short *) (data+offset)));
         offset += 2;
         nat->type = htobe16(*((unsigned short *) (data+offset)));
@@ -156,7 +144,7 @@ int njvm_constpool_load(struct njvm_class *cls, uint32_t index, uint8_t *data) {
         DPF("NAT:  #%d #%d", nat->name, nat->type);
     }
     else if(tag == 9) {
-        struct njvm_constpool_fieldref *fref = malloc(sizeof(*fref));
+        struct njvm_constpool_fieldref *fref = malloc(sizeof(struct njvm_constpool_fieldref));
         fref->cls = htobe16(*((unsigned short *) (data+offset)));
         offset += 2;
         fref->nat = htobe16(*((unsigned short *) (data+offset)));
@@ -165,7 +153,7 @@ int njvm_constpool_load(struct njvm_class *cls, uint32_t index, uint8_t *data) {
         DPF("FREF: #%d #%d", fref->cls, fref->nat);
     }
     else if(tag == 7) {
-        struct njvm_constpool_classref *clsref = malloc(sizeof(*clsref));
+        struct njvm_constpool_classref *clsref = malloc(sizeof(struct njvm_constpool_classref));
         clsref->name = htobe16(*((unsigned short *) (data+offset)));
         offset += 2;
         e->data = clsref;
@@ -211,7 +199,15 @@ struct njvm_class *njvm_class_getclass(struct njvm_jre *jre, char *name) {
 }
 
 struct njvm_object *njvm_class_new(struct njvm_jre *jre, struct njvm_class *cls) {
+    assert(jre);
+    assert(cls);
     struct njvm_object *obj = malloc(sizeof(*obj));
+
+    if(obj == NULL) {
+        DPF("FAILED TO ALLOCATE NEW JAVA OBJECT\n");
+        return NULL;
+    }
+
     obj->cls = cls;
     obj->fields = calloc(cls->field_count, sizeof(pair_t));
 
