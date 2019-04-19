@@ -99,6 +99,11 @@ void njvm_exec_method(uint32_t st, struct njvm_method *m) {
 }
 
 struct njvm_class *njvm_class_load(unsigned char *d, size_t size) {
+    if(!(d[0] == 0xCA && d[1] == 0xFE && d[2] == 0xBA && d[3] == 0xBE)) {
+        DPF("Invalid class signature\n");
+        return NULL;
+    }
+
     struct njvm_class *class = malloc(sizeof(struct njvm_class));
     /* unsigned char *start = d; */
     d += 8;

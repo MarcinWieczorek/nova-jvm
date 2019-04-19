@@ -174,7 +174,7 @@ void njvm_op_B2_getstatic(struct njvm_mexec *me) {
     /* DPF(" --- Class name: %s\n", cls_name); */
     struct njvm_class *cls = njvm_class_getclass(me->m->cls->jre, cls_name);
     if(cls == NULL) {
-        DPF(" -!!- ClassNotFound: %s\n", cls_name);
+        njvm_raise("NoClassDefFoundError %s", cls_name);
         return;
     }
     struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, fref->nat)->data;
@@ -187,8 +187,8 @@ void njvm_op_B2_getstatic(struct njvm_mexec *me) {
         njvm_internal_push(me, field->value);
     }
     else {
-        DPF(" --- NoSuchField %s\n", field_name);
-        njvm_internal_push(me, 0); //TODO break somehow
+        njvm_raise("NoSuchFieldError %s", field_name);
+        return;
     }
 }
 
@@ -200,7 +200,7 @@ void njvm_op_B3_putstatic(struct njvm_mexec *me) {
     /* DPF(" --- Class name: %s\n", cls_name); */
     struct njvm_class *cls = njvm_class_getclass(me->m->cls->jre, cls_name);
     if(cls == NULL) {
-        DPF(" -!!- ClassNotFound: %s\n", cls_name);
+        njvm_raise("NoClassDefFoundError %s", cls_name);
         return;
     }
     struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, fref->nat)->data;
@@ -218,7 +218,8 @@ void njvm_op_B4_getfield(struct njvm_mexec *me) {
     /* DPF(" --- Class name: %s\n", cls_name); */
     struct njvm_class *cls = njvm_class_getclass(me->m->cls->jre, cls_name);
     if(cls == NULL) {
-        DPF(" -!!- ClassNotFound: %s\n", cls_name);
+        njvm_raise("NoClassDefFoundError %s", cls_name);
+        return;
     }
     struct njvm_constpool_nameandtype *nat = njvm_constpool_get(me->m->cls, fref->nat)->data;
     char *field_name = njvm_constpool_get(me->m->cls, nat->name)->data;
@@ -237,8 +238,8 @@ void njvm_op_B4_getfield(struct njvm_mexec *me) {
         }
     }
     else {
-        DPF(" --- NoSuchField %s\n", field_name);
-        njvm_internal_push(me, 0); //TODO break somehow
+        njvm_raise("NoSuchFieldError %s", field_name);
+        return;
     }
 
 }
@@ -277,7 +278,7 @@ void njvm_op_B5_putfield(struct njvm_mexec *me) {
         }
     }
     else {
-        njvm_raise("NotSuchFieldException %s", field_name);
+        njvm_raise("NotSuchFieldError %s", field_name);
         return;
     }
 }
